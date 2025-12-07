@@ -1,254 +1,378 @@
-import { Evaluation, UserStats, AdminStats, User, SubmissionPayload } from '@/types';
-
-const API_BASE = 'https://api.mi-backend.com';
-
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('evaluador_token');
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': token ? `Bearer ${token}` : '',
-  };
-};
-
-// Mock data for demo
-const mockEvaluations: Evaluation[] = [
-  {
-    id: '1',
-    submission_id: 's1',
-    user_id: '1',
-    titulo: 'Reunión de ventas - Cliente ABC',
-    resumen: 'La reunión tuvo un buen desarrollo con una presentación clara de los productos. Se identificaron oportunidades de mejora en el cierre de ventas.',
-    fortalezas: [
-      'Excelente manejo del producto',
-      'Comunicación clara y profesional',
-      'Buena escucha activa',
-      'Respuestas precisas a objeciones',
-    ],
-    mejoras: [
-      'Mejorar técnicas de cierre',
-      'Reducir tiempos muertos en la conversación',
-      'Incluir más ejemplos de casos de éxito',
-    ],
-    recomendaciones: [
-      'Practicar técnicas de cierre con role-playing',
-      'Preparar casos de éxito antes de cada reunión',
-      'Implementar pausas estratégicas para generar expectativa',
-    ],
-    score: 85,
-    fecha: '2024-01-15T10:30:00Z',
-    estado: 'completado',
-    tipo: 'file',
-  },
-  {
-    id: '2',
-    submission_id: 's2',
-    user_id: '1',
-    titulo: 'Llamada de seguimiento - Prospecto XYZ',
-    resumen: 'Seguimiento efectivo con buena gestión de expectativas del cliente.',
-    fortalezas: [
-      'Seguimiento oportuno',
-      'Manejo adecuado de objeciones',
-    ],
-    mejoras: [
-      'Preparar mejor la propuesta de valor',
-    ],
-    recomendaciones: [
-      'Revisar el pitch de valor antes de cada llamada',
-    ],
-    score: 78,
-    fecha: '2024-01-10T14:00:00Z',
-    estado: 'completado',
-    tipo: 'transcript',
-  },
-  {
-    id: '3',
-    submission_id: 's3',
-    user_id: '1',
-    titulo: 'Demo de producto',
-    resumen: '',
-    fortalezas: [],
-    mejoras: [],
-    recomendaciones: [],
-    score: 0,
-    fecha: '2024-01-18T09:00:00Z',
-    estado: 'procesando',
-    tipo: 'link',
-  },
-];
-
-const mockUserStats: UserStats = {
-  total_evaluaciones: 12,
-  evaluaciones_mes: 3,
-  promedio_score: 82,
-  ultima_evaluacion: '2024-01-15T10:30:00Z',
-};
-
-const mockAdminStats: AdminStats = {
-  total_evaluaciones: 156,
-  evaluaciones_mes: 34,
-  evaluaciones_proceso: 5,
-  tiempo_promedio_analisis: 4.5,
-  usuarios_activos: 28,
-  descargas: 89,
-};
-
-const mockUsers: User[] = [
-  { id: '1', nombre: 'Juan García', email: 'juan@empresa.com', rol: 'user', fecha_creacion: '2023-06-15', activo: true },
-  { id: '2', nombre: 'María López', email: 'maria@empresa.com', rol: 'user', fecha_creacion: '2023-07-20', activo: true },
-  { id: '3', nombre: 'Carlos Admin', email: 'admin@empresa.com', rol: 'admin', fecha_creacion: '2023-01-01', activo: true },
-  { id: '4', nombre: 'Ana Martínez', email: 'ana@empresa.com', rol: 'user', fecha_creacion: '2023-09-10', activo: false },
-];
+import { supabase } from '@/integrations/supabase/client';
+import { Evaluation, UserStats, AdminStats, User, Profile } from '@/types';
 
 export const api = {
   // User endpoints
   getUserStats: async (userId: string): Promise<UserStats> => {
-    try {
-      const response = await fetch(`${API_BASE}/user/${userId}/stats`, {
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) return response.json();
-    } catch {}
-    return mockUserStats;
+    const { data: submissions } = await supabase
+      .from('submissions')
+      .select('id, created_at')
+      .eq('user_id', userId);
+
+    const { data: evaluations } = await supabase
+      .from('evaluations')
+      .select('score, created_at')
+      .eq('user_id', userId);
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const totalEvaluaciones = submissions?.length || 0;
+    const evaluacionesMes = submissions?.filter(
+      s => new Date(s.created_at) >= startOfMonth
+    ).length || 0;
+    
+    const scores = evaluations?.map(e => e.score).filter(s => s !== null && s > 0) || [];
+    const promedioScore = scores.length > 0 
+      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+      : 0;
+
+    const ultimaEvaluacion = submissions?.length 
+      ? submissions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]?.created_at
+      : undefined;
+
+    return {
+      total_evaluaciones: totalEvaluaciones,
+      evaluaciones_mes: evaluacionesMes,
+      promedio_score: promedioScore,
+      ultima_evaluacion: ultimaEvaluacion,
+    };
   },
 
   getUserEvaluations: async (userId: string): Promise<Evaluation[]> => {
-    try {
-      const response = await fetch(`${API_BASE}/user/${userId}/evaluations`, {
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) return response.json();
-    } catch {}
-    return mockEvaluations;
+    const { data: submissions } = await supabase
+      .from('submissions')
+      .select(`
+        id,
+        user_id,
+        tipo,
+        estado,
+        created_at,
+        evaluations (
+          id,
+          titulo,
+          resumen,
+          fortalezas,
+          mejoras,
+          recomendaciones,
+          score
+        )
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (!submissions) return [];
+
+    return submissions.map(sub => {
+      const eval_ = sub.evaluations?.[0];
+      return {
+        id: eval_?.id || sub.id,
+        submission_id: sub.id,
+        user_id: sub.user_id,
+        titulo: eval_?.titulo || null,
+        resumen: eval_?.resumen || null,
+        fortalezas: eval_?.fortalezas || [],
+        mejoras: eval_?.mejoras || [],
+        recomendaciones: eval_?.recomendaciones || [],
+        score: eval_?.score || 0,
+        created_at: sub.created_at,
+        fecha: sub.created_at,
+        estado: sub.estado,
+        tipo: sub.tipo,
+        submission: {
+          tipo: sub.tipo,
+          estado: sub.estado,
+        },
+      };
+    });
   },
 
   getEvaluation: async (evaluationId: string): Promise<Evaluation | null> => {
-    try {
-      const response = await fetch(`${API_BASE}/evaluation/${evaluationId}`, {
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) return response.json();
-    } catch {}
-    return mockEvaluations.find(e => e.id === evaluationId) || null;
+    // First try to get by evaluation id
+    const { data } = await supabase
+      .from('evaluations')
+      .select(`
+        *,
+        submissions (
+          tipo,
+          estado,
+          created_at
+        )
+      `)
+      .eq('id', evaluationId)
+      .maybeSingle();
+
+    // If not found, try by submission id
+    if (!data) {
+      const { data: submission } = await supabase
+        .from('submissions')
+        .select(`
+          *,
+          evaluations (*)
+        `)
+        .eq('id', evaluationId)
+        .maybeSingle();
+
+      if (submission) {
+        const eval_ = submission.evaluations?.[0];
+        return {
+          id: eval_?.id || submission.id,
+          submission_id: submission.id,
+          user_id: submission.user_id,
+          titulo: eval_?.titulo || null,
+          resumen: eval_?.resumen || null,
+          fortalezas: eval_?.fortalezas || [],
+          mejoras: eval_?.mejoras || [],
+          recomendaciones: eval_?.recomendaciones || [],
+          score: eval_?.score || 0,
+          created_at: submission.created_at,
+          fecha: submission.created_at,
+          estado: submission.estado,
+          tipo: submission.tipo,
+          submission: {
+            tipo: submission.tipo,
+            estado: submission.estado,
+          },
+        };
+      }
+      return null;
+    }
+
+    return {
+      id: data.id,
+      submission_id: data.submission_id,
+      user_id: data.user_id,
+      titulo: data.titulo,
+      resumen: data.resumen,
+      fortalezas: data.fortalezas || [],
+      mejoras: data.mejoras || [],
+      recomendaciones: data.recomendaciones || [],
+      score: data.score || 0,
+      created_at: data.created_at,
+      fecha: data.submissions?.created_at || data.created_at,
+      estado: data.submissions?.estado,
+      tipo: data.submissions?.tipo,
+      submission: data.submissions ? {
+        tipo: data.submissions.tipo,
+        estado: data.submissions.estado,
+      } : undefined,
+    };
   },
 
-  submitMeeting: async (payload: SubmissionPayload): Promise<{ success: boolean; id?: string; error?: string }> => {
+  submitMeeting: async (payload: {
+    user_id: string;
+    type: 'file' | 'transcript' | 'link';
+    file?: File;
+    transcript?: string;
+    link?: string;
+  }): Promise<{ success: boolean; id?: string; error?: string }> => {
     try {
-      const formData = new FormData();
-      formData.append('user_id', payload.user_id);
-      formData.append('type', payload.type);
-      
+      let archivo_url: string | null = null;
+
+      // Upload file if present
       if (payload.file) {
-        formData.append('file', payload.file);
-      }
-      if (payload.transcript) {
-        formData.append('transcript', payload.transcript);
-      }
-      if (payload.link) {
-        formData.append('link', payload.link);
+        const fileExt = payload.file.name.split('.').pop();
+        const fileName = `${payload.user_id}/${Date.now()}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('recordings')
+          .upload(fileName, payload.file);
+
+        if (uploadError) {
+          return { success: false, error: uploadError.message };
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('recordings')
+          .getPublicUrl(fileName);
+        
+        archivo_url = urlData.publicUrl;
       }
 
-      const response = await fetch(`${API_BASE}/submission`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('evaluador_token')}`,
-        },
-        body: formData,
-      });
+      // Create submission
+      const { data, error } = await supabase
+        .from('submissions')
+        .insert({
+          user_id: payload.user_id,
+          tipo: payload.type,
+          archivo_url,
+          transcript_text: payload.transcript || null,
+          link: payload.link || null,
+        })
+        .select()
+        .single();
 
-      if (response.ok) {
-        const data = await response.json();
-        return { success: true, id: data.id };
+      if (error) {
+        return { success: false, error: error.message };
       }
-    } catch {}
-    
-    // Demo mode
-    return { success: true, id: 'demo-' + Date.now() };
+
+      return { success: true, id: data.id };
+    } catch (error) {
+      return { success: false, error: 'Error al enviar' };
+    }
   },
 
   // Admin endpoints
   getAdminStats: async (): Promise<AdminStats> => {
-    try {
-      const response = await fetch(`${API_BASE}/admin/stats`, {
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) return response.json();
-    } catch {}
-    return mockAdminStats;
+    const { data: allSubmissions } = await supabase
+      .from('submissions')
+      .select('id, estado, created_at');
+
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, activo');
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const total = allSubmissions?.length || 0;
+    const thisMonth = allSubmissions?.filter(
+      s => new Date(s.created_at) >= startOfMonth
+    ).length || 0;
+    const processing = allSubmissions?.filter(
+      s => s.estado === 'procesando'
+    ).length || 0;
+    const activeUsers = profiles?.filter(p => p.activo).length || 0;
+
+    return {
+      total_evaluaciones: total,
+      evaluaciones_mes: thisMonth,
+      evaluaciones_proceso: processing,
+      tiempo_promedio_analisis: 4.5,
+      usuarios_activos: activeUsers,
+      descargas: 0,
+    };
   },
 
   getAdminUsers: async (): Promise<User[]> => {
-    try {
-      const response = await fetch(`${API_BASE}/admin/users`, {
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) return response.json();
-    } catch {}
-    return mockUsers;
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!profiles) return [];
+
+    // Get roles for each user
+    const userIds = profiles.map(p => p.user_id);
+    const { data: roles } = await supabase
+      .from('user_roles')
+      .select('user_id, role')
+      .in('user_id', userIds);
+
+    const roleMap = new Map(roles?.map(r => [r.user_id, r.role]) || []);
+
+    return profiles.map(p => ({
+      id: p.id,
+      user_id: p.user_id,
+      nombre: p.nombre,
+      email: p.email,
+      rol: (roleMap.get(p.user_id) || 'user') as 'admin' | 'user',
+      fecha_creacion: p.created_at,
+      activo: p.activo,
+    }));
   },
 
   getAllEvaluations: async (): Promise<Evaluation[]> => {
-    try {
-      const response = await fetch(`${API_BASE}/admin/evaluations`, {
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) return response.json();
-    } catch {}
-    return mockEvaluations;
+    const { data: submissions } = await supabase
+      .from('submissions')
+      .select(`
+        id,
+        user_id,
+        tipo,
+        estado,
+        created_at,
+        evaluations (
+          id,
+          titulo,
+          resumen,
+          fortalezas,
+          mejoras,
+          recomendaciones,
+          score
+        )
+      `)
+      .order('created_at', { ascending: false });
+
+    if (!submissions) return [];
+
+    return submissions.map(sub => {
+      const eval_ = sub.evaluations?.[0];
+      return {
+        id: eval_?.id || sub.id,
+        submission_id: sub.id,
+        user_id: sub.user_id,
+        titulo: eval_?.titulo || null,
+        resumen: eval_?.resumen || null,
+        fortalezas: eval_?.fortalezas || [],
+        mejoras: eval_?.mejoras || [],
+        recomendaciones: eval_?.recomendaciones || [],
+        score: eval_?.score || 0,
+        created_at: sub.created_at,
+        fecha: sub.created_at,
+        estado: sub.estado,
+        tipo: sub.tipo,
+        submission: {
+          tipo: sub.tipo,
+          estado: sub.estado,
+        },
+      };
+    });
   },
 
-  createUser: async (user: Omit<User, 'id' | 'fecha_creacion'>): Promise<{ success: boolean; user?: User; error?: string }> => {
-    try {
-      const response = await fetch(`${API_BASE}/admin/users`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(user),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        return { success: true, user: data };
-      }
-    } catch {}
+  createUser: async (userData: {
+    email: string;
+    password: string;
+    nombre: string;
+    rol: 'admin' | 'user';
+  }): Promise<{ success: boolean; user?: User; error?: string }> => {
+    // Note: Creating users requires admin API or edge function
     return { 
-      success: true, 
-      user: { 
-        ...user, 
-        id: 'new-' + Date.now(), 
-        fecha_creacion: new Date().toISOString() 
-      } 
+      success: false, 
+      error: 'La creación de usuarios requiere una función backend. Configura un endpoint en tu backend.' 
     };
   },
 
   updateUser: async (userId: string, updates: Partial<User>): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const response = await fetch(`${API_BASE}/admin/users/${userId}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(updates),
-      });
-      if (response.ok) return { success: true };
-    } catch {}
+    // Update profile
+    if (updates.nombre || updates.activo !== undefined) {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          nombre: updates.nombre,
+          activo: updates.activo,
+        })
+        .eq('user_id', userId);
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+    }
+
+    // Update role if provided
+    if (updates.rol) {
+      const { error } = await supabase
+        .from('user_roles')
+        .update({ role: updates.rol })
+        .eq('user_id', userId);
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+    }
+
     return { success: true };
   },
 
   deleteUser: async (userId: string): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const response = await fetch(`${API_BASE}/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) return { success: true };
-    } catch {}
-    return { success: true };
+    // Note: Deleting users requires admin API
+    return { 
+      success: false, 
+      error: 'La eliminación de usuarios requiere una función backend.' 
+    };
   },
 
   downloadPdf: async (evaluationId: string): Promise<Blob | null> => {
-    try {
-      const response = await fetch(`${API_BASE}/evaluation/${evaluationId}/pdf`, {
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) return response.blob();
-    } catch {}
-    // Demo: return null to trigger a toast
+    // PDF generation would be done by backend
     return null;
   },
 };

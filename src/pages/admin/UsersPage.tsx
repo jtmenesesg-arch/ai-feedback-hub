@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/services/api';
-import { User, UserRole } from '@/types';
+import { User } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -47,7 +47,7 @@ interface UserFormData {
   nombre: string;
   email: string;
   password?: string;
-  rol: UserRole;
+  rol: 'admin' | 'user';
   activo: boolean;
 }
 
@@ -123,10 +123,16 @@ export const UsersPage = () => {
 
     if (selectedUser) {
       // Update
-      const result = await api.updateUser(selectedUser.id, formData);
+      const result = await api.updateUser(selectedUser.user_id, {
+        nombre: formData.nombre,
+        rol: formData.rol,
+        activo: formData.activo,
+      });
       if (result.success) {
         toast({ title: 'Usuario actualizado' });
         fetchUsers();
+      } else {
+        toast({ title: 'Error', description: result.error, variant: 'destructive' });
       }
     } else {
       // Create
@@ -139,10 +145,17 @@ export const UsersPage = () => {
         setIsSaving(false);
         return;
       }
-      const result = await api.createUser(formData);
+      const result = await api.createUser({
+        email: formData.email,
+        password: formData.password,
+        nombre: formData.nombre,
+        rol: formData.rol,
+      });
       if (result.success) {
         toast({ title: 'Usuario creado' });
         fetchUsers();
+      } else {
+        toast({ title: 'Error', description: result.error, variant: 'destructive' });
       }
     }
 
@@ -153,16 +166,18 @@ export const UsersPage = () => {
   const handleDelete = async () => {
     if (!selectedUser) return;
 
-    const result = await api.deleteUser(selectedUser.id);
+    const result = await api.deleteUser(selectedUser.user_id);
     if (result.success) {
       toast({ title: 'Usuario eliminado' });
       fetchUsers();
+    } else {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
     setIsDeleteDialogOpen(false);
   };
 
   const handleToggleActive = async (user: User) => {
-    const result = await api.updateUser(user.id, { activo: !user.activo });
+    const result = await api.updateUser(user.user_id, { activo: !user.activo });
     if (result.success) {
       setUsers(users.map(u => 
         u.id === user.id ? { ...u, activo: !u.activo } : u
@@ -310,6 +325,7 @@ export const UsersPage = () => {
                 value={formData.email}
                 onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                 placeholder="juan@empresa.com"
+                disabled={!!selectedUser}
               />
             </div>
 
@@ -330,7 +346,7 @@ export const UsersPage = () => {
               <Label htmlFor="rol">Rol</Label>
               <Select
                 value={formData.rol}
-                onValueChange={(value: UserRole) => setFormData(prev => ({ ...prev, rol: value }))}
+                onValueChange={(value: 'admin' | 'user') => setFormData(prev => ({ ...prev, rol: value }))}
               >
                 <SelectTrigger>
                   <SelectValue />

@@ -54,8 +54,8 @@ export const FeedbackPage = () => {
       window.URL.revokeObjectURL(url);
     } else {
       toast({
-        title: 'Demo',
-        description: 'La descarga de PDF estará disponible con el backend real',
+        title: 'Info',
+        description: 'La descarga de PDF requiere configurar el backend',
       });
     }
   };
@@ -116,7 +116,7 @@ export const FeedbackPage = () => {
           <div className="flex items-center gap-4 mt-2 text-muted-foreground">
             <span className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
-              {new Date(evaluation.fecha).toLocaleDateString('es-ES', {
+              {new Date(evaluation.fecha || evaluation.created_at).toLocaleDateString('es-ES', {
                 day: 'numeric',
                 month: 'long',
                 year: 'numeric',
@@ -156,69 +156,92 @@ export const FeedbackPage = () => {
       </div>
 
       {/* Summary */}
-      <div className="bg-card rounded-xl border border-border p-6">
-        <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
-          <Target className="h-5 w-5 text-primary" />
-          Resumen
-        </h2>
-        <p className="text-foreground leading-relaxed">
-          {evaluation.resumen}
-        </p>
-      </div>
+      {evaluation.resumen && (
+        <div className="bg-card rounded-xl border border-border p-6">
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <Target className="h-5 w-5 text-primary" />
+            Resumen
+          </h2>
+          <p className="text-foreground leading-relaxed">
+            {evaluation.resumen}
+          </p>
+        </div>
+      )}
 
       {/* Strengths */}
-      <div className="bg-card rounded-xl border border-border p-6">
-        <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
-          <ThumbsUp className="h-5 w-5 text-accent" />
-          Fortalezas
-        </h2>
-        <ul className="space-y-3">
-          {evaluation.fortalezas.map((item, index) => (
-            <li key={index} className="flex items-start gap-3">
-              <span className="w-6 h-6 rounded-full bg-accent/10 text-accent flex items-center justify-center text-sm font-medium shrink-0">
-                {index + 1}
-              </span>
-              <span className="text-foreground">{item}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {evaluation.fortalezas && evaluation.fortalezas.length > 0 && (
+        <div className="bg-card rounded-xl border border-border p-6">
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <ThumbsUp className="h-5 w-5 text-accent" />
+            Fortalezas
+          </h2>
+          <ul className="space-y-3">
+            {evaluation.fortalezas.map((item, index) => (
+              <li key={index} className="flex items-start gap-3">
+                <span className="w-6 h-6 rounded-full bg-accent/10 text-accent flex items-center justify-center text-sm font-medium shrink-0">
+                  {index + 1}
+                </span>
+                <span className="text-foreground">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Improvements */}
-      <div className="bg-card rounded-xl border border-border p-6">
-        <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5 text-warning" />
-          Áreas de mejora
-        </h2>
-        <ul className="space-y-3">
-          {evaluation.mejoras.map((item, index) => (
-            <li key={index} className="flex items-start gap-3">
-              <span className="w-6 h-6 rounded-full bg-warning/10 text-warning flex items-center justify-center text-sm font-medium shrink-0">
-                {index + 1}
-              </span>
-              <span className="text-foreground">{item}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {evaluation.mejoras && evaluation.mejoras.length > 0 && (
+        <div className="bg-card rounded-xl border border-border p-6">
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-warning" />
+            Áreas de mejora
+          </h2>
+          <ul className="space-y-3">
+            {evaluation.mejoras.map((item, index) => (
+              <li key={index} className="flex items-start gap-3">
+                <span className="w-6 h-6 rounded-full bg-warning/10 text-warning flex items-center justify-center text-sm font-medium shrink-0">
+                  {index + 1}
+                </span>
+                <span className="text-foreground">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Recommendations */}
-      <div className="bg-card rounded-xl border border-border p-6">
-        <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
-          <Lightbulb className="h-5 w-5 text-primary" />
-          Recomendaciones
-        </h2>
-        <ul className="space-y-3">
-          {evaluation.recomendaciones.map((item, index) => (
-            <li key={index} className="flex items-start gap-3">
-              <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-medium shrink-0">
-                {index + 1}
-              </span>
-              <span className="text-foreground">{item}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {evaluation.recomendaciones && evaluation.recomendaciones.length > 0 && (
+        <div className="bg-card rounded-xl border border-border p-6">
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <Lightbulb className="h-5 w-5 text-primary" />
+            Recomendaciones
+          </h2>
+          <ul className="space-y-3">
+            {evaluation.recomendaciones.map((item, index) => (
+              <li key={index} className="flex items-start gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-medium shrink-0">
+                  {index + 1}
+                </span>
+                <span className="text-foreground">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* No feedback yet */}
+      {!evaluation.resumen && evaluation.estado === 'procesando' && (
+        <div className="bg-card rounded-xl border border-border p-12 text-center">
+          <div className="w-16 h-16 mx-auto rounded-full bg-warning/10 flex items-center justify-center mb-4">
+            <span className="text-3xl">⏳</span>
+          </div>
+          <h3 className="text-lg font-semibold text-foreground mb-2">
+            Evaluación en proceso
+          </h3>
+          <p className="text-muted-foreground">
+            Tu reunión está siendo analizada. Recibirás el feedback pronto.
+          </p>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-4 justify-center pt-4">

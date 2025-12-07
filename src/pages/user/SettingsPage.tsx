@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { User, Mail, Lock, Bell, Shield } from 'lucide-react';
 
 export const SettingsPage = () => {
-  const { user } = useAuth();
+  const { profile } = useAuth();
   const { toast } = useToast();
   const [notifications, setNotifications] = useState({
     email: true,
@@ -46,7 +46,7 @@ export const SettingsPage = () => {
               <Label htmlFor="name">Nombre completo</Label>
               <Input
                 id="name"
-                defaultValue={user?.nombre}
+                defaultValue={profile?.nombre}
                 disabled
                 className="bg-muted"
               />
@@ -57,7 +57,7 @@ export const SettingsPage = () => {
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="email"
-                  defaultValue={user?.email}
+                  defaultValue={profile?.email}
                   disabled
                   className="pl-10 bg-muted"
                 />

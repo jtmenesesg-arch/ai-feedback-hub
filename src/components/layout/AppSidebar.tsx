@@ -41,10 +41,9 @@ const adminNavItems: NavItem[] = [
 
 export const AppSidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
-  const { user } = useAuth();
+  const { isAdmin } = useAuth();
   const location = useLocation();
 
-  const isAdmin = user?.rol === 'admin';
   const allItems = isAdmin ? [...userNavItems, ...adminNavItems] : userNavItems;
 
   const NavItemComponent = ({ item }: { item: NavItem }) => {
