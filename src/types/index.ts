@@ -33,6 +33,7 @@ export interface Evaluation {
   user_id: string;
   titulo?: string | null;
   resumen: string | null;
+  participantes: string[];
   fortalezas: string[];
   mejoras: string[];
   recomendaciones: string[];
