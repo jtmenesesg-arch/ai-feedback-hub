@@ -76,12 +76,14 @@ Debes responder SIEMPRE en formato JSON válido con la siguiente estructura exac
 {
   "titulo": "Título descriptivo de la reunión",
   "resumen": "Resumen ejecutivo de 2-3 oraciones",
+  "participantes": ["Nombre Participante 1", "Nombre Participante 2"],
   "fortalezas": ["Fortaleza 1", "Fortaleza 2", "Fortaleza 3"],
   "mejoras": ["Área de mejora 1", "Área de mejora 2"],
   "recomendaciones": ["Recomendación específica 1", "Recomendación específica 2", "Recomendación específica 3"],
   "score": 75
 }
 
+IMPORTANTE: Extrae los nombres de los participantes mencionados en la transcripción o contenido.
 El score debe ser un número entre 0 y 100 que refleje la calidad general de la comunicación.
 Proporciona feedback constructivo, específico y accionable.
 Responde SOLO con el JSON, sin texto adicional.`
@@ -137,6 +139,7 @@ Responde SOLO con el JSON, sin texto adicional.`
         user_id: submission.user_id,
         titulo: feedback.titulo || "Evaluación de Reunión",
         resumen: feedback.resumen || "",
+        participantes: feedback.participantes || [],
         fortalezas: feedback.fortalezas || [],
         mejoras: feedback.mejoras || [],
         recomendaciones: feedback.recomendaciones || [],

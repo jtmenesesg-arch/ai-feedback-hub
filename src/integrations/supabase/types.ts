@@ -20,6 +20,7 @@ export type Database = {
           fortalezas: string[] | null
           id: string
           mejoras: string[] | null
+          participantes: string[] | null
           recomendaciones: string[] | null
           resumen: string | null
           score: number | null
@@ -32,6 +33,7 @@ export type Database = {
           fortalezas?: string[] | null
           id?: string
           mejoras?: string[] | null
+          participantes?: string[] | null
           recomendaciones?: string[] | null
           resumen?: string | null
           score?: number | null
@@ -44,6 +46,7 @@ export type Database = {
           fortalezas?: string[] | null
           id?: string
           mejoras?: string[] | null
+          participantes?: string[] | null
           recomendaciones?: string[] | null
           resumen?: string | null
           score?: number | null

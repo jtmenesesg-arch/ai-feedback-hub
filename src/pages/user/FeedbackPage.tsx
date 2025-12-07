@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Lightbulb,
   Award,
+  Users,
 } from 'lucide-react';
 
 export const FeedbackPage = () => {
@@ -154,6 +155,26 @@ export const FeedbackPage = () => {
           <Award className="h-12 w-12 text-primary/30" />
         </div>
       </div>
+
+      {/* Participants */}
+      {evaluation.participantes && evaluation.participantes.length > 0 && (
+        <div className="bg-card rounded-xl border border-border p-6">
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <Users className="h-5 w-5 text-primary" />
+            Participantes
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {evaluation.participantes.map((nombre, index) => (
+              <span
+                key={index}
+                className="px-3 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-medium"
+              >
+                {nombre}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Summary */}
       {evaluation.resumen && (
