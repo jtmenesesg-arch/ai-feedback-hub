@@ -206,6 +206,13 @@ export const api = {
         return { success: false, error: error.message };
       }
 
+      // Trigger AI processing in background
+      supabase.functions.invoke('process-meeting', {
+        body: { submissionId: data.id }
+      }).catch(err => {
+        console.error('Error triggering AI processing:', err);
+      });
+
       return { success: true, id: data.id };
     } catch (error) {
       return { success: false, error: 'Error al enviar' };
