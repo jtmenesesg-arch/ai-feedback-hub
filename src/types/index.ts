@@ -2,6 +2,7 @@ export type UserRole = 'admin' | 'user';
 
 export interface User {
   id: string;
+  user_id: string;
   nombre: string;
   email: string;
   rol: UserRole;
@@ -23,22 +24,27 @@ export interface Submission {
   archivo_url?: string;
   transcript_text?: string;
   link?: string;
-  fecha: string;
+  created_at: string;
 }
 
 export interface Evaluation {
   id: string;
   submission_id: string;
   user_id: string;
-  titulo?: string;
-  resumen: string;
+  titulo?: string | null;
+  resumen: string | null;
   fortalezas: string[];
   mejoras: string[];
   recomendaciones: string[];
   score: number;
-  fecha: string;
-  estado: 'procesando' | 'completado' | 'error';
-  tipo: 'file' | 'transcript' | 'link';
+  created_at: string;
+  fecha?: string;
+  estado?: 'procesando' | 'completado' | 'error';
+  tipo?: 'file' | 'transcript' | 'link';
+  submission?: {
+    tipo: 'file' | 'transcript' | 'link';
+    estado: 'procesando' | 'completado' | 'error';
+  };
 }
 
 export interface UserStats {
@@ -59,8 +65,18 @@ export interface AdminStats {
 
 export interface SubmissionPayload {
   user_id: string;
-  type: 'file' | 'transcript' | 'external_link';
+  type: 'file' | 'transcript' | 'link';
   file?: File;
   transcript?: string;
   link?: string;
+}
+
+export interface Profile {
+  id: string;
+  user_id: string;
+  nombre: string;
+  email: string;
+  activo: boolean;
+  created_at: string;
+  role?: UserRole;
 }

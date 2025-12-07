@@ -117,7 +117,7 @@ export const EvaluationsPage = () => {
               {evaluations.map((evaluation) => (
                 <TableRow key={evaluation.id} className="hover:bg-muted/30">
                   <TableCell className="font-medium">
-                    {new Date(evaluation.fecha).toLocaleDateString('es-ES', {
+                    {new Date(evaluation.created_at).toLocaleDateString('es-ES', {
                       day: 'numeric',
                       month: 'short',
                       year: 'numeric',
@@ -130,19 +130,19 @@ export const EvaluationsPage = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {getTypeIcon(evaluation.tipo)}
-                      <span className="text-sm">{getTypeLabel(evaluation.tipo)}</span>
+                      {getTypeIcon(evaluation.submission?.tipo || 'file')}
+                      <span className="text-sm">{getTypeLabel(evaluation.submission?.tipo || 'file')}</span>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={evaluation.estado} />
+                    <StatusBadge status={evaluation.submission?.estado || 'procesando'} />
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => navigate(`/evaluation/${evaluation.id}`)}
-                      disabled={evaluation.estado !== 'completado'}
+                      onClick={() => navigate(`/evaluation/${evaluation.submission_id}`)}
+                      disabled={evaluation.submission?.estado !== 'completado'}
                     >
                       <Eye className="h-4 w-4 mr-2" />
                       Ver Feedback

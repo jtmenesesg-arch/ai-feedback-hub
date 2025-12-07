@@ -13,11 +13,11 @@ import { LogOut, User, Settings, Bell, Brain } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const Header = () => {
-  const { user, logout } = useAuth();
+  const { profile, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
@@ -43,7 +43,7 @@ export const Header = () => {
       {/* Left - Welcome message on desktop */}
       <div className="hidden lg:block">
         <h2 className="text-lg font-semibold text-foreground">
-          ¡Hola, {user?.nombre?.split(' ')[0]}!
+          ¡Hola, {profile?.nombre?.split(' ')[0] || 'Usuario'}!
         </h2>
         <p className="text-sm text-muted-foreground">
           Bienvenido de vuelta
@@ -64,12 +64,12 @@ export const Header = () => {
             <Button variant="ghost" className="flex items-center gap-2 px-2">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary text-primary-foreground text-sm font-medium">
-                  {user?.nombre ? getInitials(user.nombre) : 'U'}
+                  {profile?.nombre ? getInitials(profile.nombre) : 'U'}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden sm:block text-left">
-                <p className="text-sm font-medium text-foreground">{user?.nombre}</p>
-                <p className="text-xs text-muted-foreground capitalize">{user?.rol}</p>
+                <p className="text-sm font-medium text-foreground">{profile?.nombre}</p>
+                <p className="text-xs text-muted-foreground">{profile?.email}</p>
               </div>
             </Button>
           </DropdownMenuTrigger>

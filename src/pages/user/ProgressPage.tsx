@@ -91,7 +91,7 @@ export const ProgressPage = () => {
             {recentScores.map((evaluation, index) => (
               <div key={evaluation.id} className="flex items-center gap-4">
                 <span className="text-sm text-muted-foreground w-24 shrink-0">
-                  {new Date(evaluation.fecha).toLocaleDateString('es-ES', {
+                  {new Date(evaluation.fecha || evaluation.created_at).toLocaleDateString('es-ES', {
                     day: 'numeric',
                     month: 'short',
                   })}

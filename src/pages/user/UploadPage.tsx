@@ -95,14 +95,14 @@ export const UploadPage = () => {
   const handleSubmit = async () => {
     if (!user?.id) return;
 
-    let payload: { user_id: string; type: 'file' | 'transcript' | 'external_link'; file?: File; transcript?: string; link?: string };
+    let payload: { user_id: string; type: 'file' | 'transcript' | 'link'; file?: File; transcript?: string; link?: string };
 
     if (activeTab === 'file' && file) {
       payload = { user_id: user.id, type: 'file', file };
     } else if (activeTab === 'transcript' && transcript.trim()) {
       payload = { user_id: user.id, type: 'transcript', transcript: transcript.trim() };
     } else if (activeTab === 'link' && externalLink.trim()) {
-      payload = { user_id: user.id, type: 'external_link', link: externalLink.trim() };
+      payload = { user_id: user.id, type: 'link', link: externalLink.trim() };
     } else {
       toast({
         title: 'Error',

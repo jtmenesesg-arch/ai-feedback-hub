@@ -1,54 +1,104 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { User, AuthState } from '@/types';
+import { User, Session } from '@supabase/supabase-js';
+import { supabase } from '@/integrations/supabase/client';
 
-interface AuthContextType extends AuthState {
+interface Profile {
+  id: string;
+  user_id: string;
+  nombre: string;
+  email: string;
+  activo: boolean;
+}
+
+interface AuthContextType {
+  user: User | null;
+  session: Session | null;
+  profile: Profile | null;
+  isAdmin: boolean;
+  isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
+  logout: () => Promise<void>;
   requestPasswordReset: (email: string) => Promise<{ success: boolean; error?: string }>;
   changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutos
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    token: null,
-    isAuthenticated: false,
-  });
-
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [lastActivity, setLastActivity] = useState<number>(Date.now());
 
-  const logout = useCallback(() => {
-    setAuthState({
-      user: null,
-      token: null,
-      isAuthenticated: false,
-    });
-    localStorage.removeItem('evaluador_token');
-    localStorage.removeItem('evaluador_user');
+  const fetchProfile = async (userId: string) => {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    if (profileData) {
+      setProfile(profileData);
+    }
+
+    // Check if user is admin
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    setIsAdmin(roleData?.role === 'admin');
+  };
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    setIsAdmin(false);
   }, []);
 
-  // Check for stored session on mount
+  // Set up auth state listener
   useEffect(() => {
-    const storedToken = localStorage.getItem('evaluador_token');
-    const storedUser = localStorage.getItem('evaluador_user');
-    
-    if (storedToken && storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        setAuthState({
-          user,
-          token: storedToken,
-          isAuthenticated: true,
-        });
-      } catch {
-        logout();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          // Defer Supabase calls with setTimeout to prevent deadlock
+          setTimeout(() => {
+            fetchProfile(session.user.id);
+          }, 0);
+        } else {
+          setProfile(null);
+          setIsAdmin(false);
+        }
+        
+        setIsLoading(false);
       }
-    }
-  }, [logout]);
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      }
+      
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   // Inactivity timeout
   useEffect(() => {
@@ -59,7 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.addEventListener('click', handleActivity);
 
     const interval = setInterval(() => {
-      if (authState.isAuthenticated && Date.now() - lastActivity > INACTIVITY_TIMEOUT) {
+      if (session && Date.now() - lastActivity > INACTIVITY_TIMEOUT) {
         logout();
       }
     }, 60000);
@@ -70,56 +120,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       window.removeEventListener('click', handleActivity);
       clearInterval(interval);
     };
-  }, [authState.isAuthenticated, lastActivity, logout]);
+  }, [session, lastActivity, logout]);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      // Simulated API call - replace with actual endpoint
-      // POST https://api.mi-backend.com/auth/login
-      const response = await fetch('https://api.mi-backend.com/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      }).catch(() => null);
-
-      // For demo purposes, simulate success with mock data
-      if (!response) {
-        // Demo mode: accept any login
-        const mockUser: User = {
-          id: '1',
-          nombre: email.split('@')[0],
-          email,
-          rol: email.includes('admin') ? 'admin' : 'user',
-          fecha_creacion: new Date().toISOString(),
-        };
-        const mockToken = 'demo-token-' + Date.now();
-        
-        setAuthState({
-          user: mockUser,
-          token: mockToken,
-          isAuthenticated: true,
-        });
-        
-        localStorage.setItem('evaluador_token', mockToken);
-        localStorage.setItem('evaluador_user', JSON.stringify(mockUser));
-        
-        return { success: true };
-      }
-
-      if (!response.ok) {
-        return { success: false, error: 'Credenciales inválidas' };
-      }
-
-      const data = await response.json();
-      setAuthState({
-        user: data.user,
-        token: data.token,
-        isAuthenticated: true,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-      
-      localStorage.setItem('evaluador_token', data.token);
-      localStorage.setItem('evaluador_user', JSON.stringify(data.user));
-      
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: 'Error de conexión' };
@@ -128,20 +141,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const requestPasswordReset = async (email: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      // POST https://api.mi-backend.com/auth/reset-password-request
-      const response = await fetch('https://api.mi-backend.com/auth/reset-password-request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      }).catch(() => null);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/change-password`,
+      });
 
-      // Demo mode
-      if (!response) {
-        return { success: true };
-      }
-
-      if (!response.ok) {
-        return { success: false, error: 'Error al enviar solicitud' };
+      if (error) {
+        return { success: false, error: error.message };
       }
 
       return { success: true };
@@ -152,23 +157,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const changePassword = async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      // POST https://api.mi-backend.com/auth/change-password
-      const response = await fetch('https://api.mi-backend.com/auth/change-password', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authState.token}`,
-        },
-        body: JSON.stringify({ password: newPassword }),
-      }).catch(() => null);
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
 
-      // Demo mode
-      if (!response) {
-        return { success: true };
-      }
-
-      if (!response.ok) {
-        return { success: false, error: 'Error al cambiar contraseña' };
+      if (error) {
+        return { success: false, error: error.message };
       }
 
       return { success: true };
@@ -179,7 +173,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider value={{
-      ...authState,
+      user,
+      session,
+      profile,
+      isAdmin,
+      isAuthenticated: !!session,
+      isLoading,
       login,
       logout,
       requestPasswordReset,

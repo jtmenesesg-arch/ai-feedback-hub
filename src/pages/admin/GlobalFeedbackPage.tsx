@@ -49,7 +49,7 @@ export const GlobalFeedbackPage = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const getTypeIcon = (tipo: string) => {
+  const getTypeIcon = (tipo?: string) => {
     switch (tipo) {
       case 'file':
         return <FileAudio className="h-4 w-4 text-primary" />;
@@ -146,7 +146,7 @@ export const GlobalFeedbackPage = () => {
             {filteredEvaluations.map((evaluation) => (
               <TableRow key={evaluation.id} className="hover:bg-muted/30">
                 <TableCell>
-                  {new Date(evaluation.fecha).toLocaleDateString('es-ES', {
+                  {new Date(evaluation.fecha || evaluation.created_at).toLocaleDateString('es-ES', {
                     day: 'numeric',
                     month: 'short',
                     year: 'numeric',
@@ -158,7 +158,7 @@ export const GlobalFeedbackPage = () => {
                   </span>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {evaluation.user_id}
+                  {evaluation.user_id.slice(0, 8)}...
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -173,13 +173,13 @@ export const GlobalFeedbackPage = () => {
                   )}
                 </TableCell>
                 <TableCell>
-                  <StatusBadge status={evaluation.estado} />
+                  <StatusBadge status={evaluation.estado || 'procesando'} />
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigate(`/evaluation/${evaluation.id}`)}
+                    onClick={() => navigate(`/evaluation/${evaluation.submission_id}`)}
                     disabled={evaluation.estado !== 'completado'}
                   >
                     <Eye className="h-4 w-4 mr-2" />
