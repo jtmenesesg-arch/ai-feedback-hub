@@ -1,1 +1,4 @@
 project_id = "wpvbniveltwrrupesadw"
+
+[functions.process-meeting]
+verify_jwt = true
