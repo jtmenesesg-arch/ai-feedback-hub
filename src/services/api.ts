@@ -338,11 +338,37 @@ export const api = {
     nombre: string;
     rol: 'admin' | 'user';
   }): Promise<{ success: boolean; user?: User; error?: string }> => {
-    // Note: Creating users requires admin API or edge function
-    return { 
-      success: false, 
-      error: 'La creación de usuarios requiere una función backend. Configura un endpoint en tu backend.' 
-    };
+    try {
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: userData
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      if (data.error) {
+        return { success: false, error: data.error };
+      }
+
+      return { 
+        success: true, 
+        user: {
+          id: data.user.id,
+          user_id: data.user.id,
+          nombre: data.user.nombre,
+          email: data.user.email,
+          rol: userData.rol,
+          fecha_creacion: new Date().toISOString(),
+          activo: true,
+        }
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Error al crear usuario' 
+      };
+    }
   },
 
   updateUser: async (userId: string, updates: Partial<User>): Promise<{ success: boolean; error?: string }> => {
