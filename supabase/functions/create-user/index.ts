@@ -12,6 +12,53 @@ serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+    // First, verify the caller is authenticated and is an admin
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error("Authorization header required");
+    }
+
+    // Create a client with the user's JWT to verify their identity
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: { Authorization: authHeader }
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+
+    // Get the authenticated user
+    const { data: { user: caller }, error: authError } = await supabaseUser.auth.getUser();
+    
+    if (authError || !caller) {
+      console.error("Auth error:", authError);
+      throw new Error("Invalid authentication");
+    }
+
+    console.log("Request from user:", caller.id);
+
+    // Check if the caller has admin role using the has_role function
+    const { data: isAdmin, error: roleError } = await supabaseUser
+      .rpc('has_role', { _user_id: caller.id, _role: 'admin' });
+
+    if (roleError) {
+      console.error("Role check error:", roleError);
+      throw new Error("Failed to verify permissions");
+    }
+
+    if (!isAdmin) {
+      console.error("Non-admin user attempted to create user:", caller.id);
+      throw new Error("Unauthorized: Admin access required");
+    }
+
+    console.log("Admin verified, proceeding with user creation");
+
     const { email, password, nombre, rol } = await req.json();
     
     if (!email || !password || !nombre) {
@@ -20,9 +67,7 @@ serve(async (req) => {
 
     console.log("Creating user:", email);
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
+    // Use service role client for admin operations
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
@@ -31,29 +76,29 @@ serve(async (req) => {
     });
 
     // Create user with admin API
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    const { data: authData, error: createError } = await supabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
       user_metadata: { nombre }
     });
 
-    if (authError) {
-      console.error("Error creating auth user:", authError);
-      throw new Error(authError.message);
+    if (createError) {
+      console.error("Error creating auth user:", createError);
+      throw new Error(createError.message);
     }
 
     console.log("Auth user created:", authData.user.id);
 
     // Update role if admin
     if (rol === 'admin' && authData.user) {
-      const { error: roleError } = await supabase
+      const { error: roleUpdateError } = await supabase
         .from('user_roles')
         .update({ role: 'admin' })
         .eq('user_id', authData.user.id);
 
-      if (roleError) {
-        console.error("Error updating role:", roleError);
+      if (roleUpdateError) {
+        console.error("Error updating role:", roleUpdateError);
       } else {
         console.log("Role updated to admin");
       }
@@ -78,7 +123,7 @@ serve(async (req) => {
         error: error instanceof Error ? error.message : "Unknown error" 
       }),
       { 
-        status: 500, 
+        status: error instanceof Error && error.message.includes("Unauthorized") ? 403 : 500, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     );
