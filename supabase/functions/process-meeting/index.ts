@@ -1,3 +1,4 @@
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.86.2";
 
@@ -5,6 +6,85 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Transcribe audio file using OpenAI Whisper
+async function transcribeAudio(audioUrl: string, supabase: any): Promise<string> {
+  const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+  
+  if (!openaiApiKey) {
+    throw new Error("OPENAI_API_KEY not configured");
+  }
+
+  console.log("Downloading audio file from storage...");
+  
+  // Extract bucket and path from the URL
+  // URL format: https://[project].supabase.co/storage/v1/object/public/[bucket]/[path]
+  // or signed URL format
+  const urlParts = audioUrl.split('/storage/v1/object/');
+  if (urlParts.length < 2) {
+    throw new Error("Invalid storage URL format");
+  }
+  
+  const pathPart = urlParts[1].replace('public/', '').replace('sign/', '');
+  const [bucket, ...fileParts] = pathPart.split('/');
+  const filePath = fileParts.join('/');
+  
+  console.log(`Downloading from bucket: ${bucket}, path: ${filePath}`);
+  
+  // Download the file from storage
+  const { data: fileData, error: downloadError } = await supabase
+    .storage
+    .from(bucket)
+    .download(filePath);
+  
+  if (downloadError || !fileData) {
+    console.error("Error downloading file:", downloadError);
+    throw new Error(`Failed to download audio file: ${downloadError?.message}`);
+  }
+
+  console.log("Audio file downloaded, size:", fileData.size, "bytes");
+
+  // Create FormData for Whisper API
+  const formData = new FormData();
+  
+  // Determine file extension from path
+  const extension = filePath.split('.').pop()?.toLowerCase() || 'mp3';
+  const mimeTypes: Record<string, string> = {
+    'mp3': 'audio/mpeg',
+    'mp4': 'video/mp4',
+    'wav': 'audio/wav',
+    'm4a': 'audio/mp4',
+    'webm': 'audio/webm',
+    'ogg': 'audio/ogg',
+  };
+  
+  const mimeType = mimeTypes[extension] || 'audio/mpeg';
+  const blob = new Blob([fileData], { type: mimeType });
+  formData.append('file', blob, `audio.${extension}`);
+  formData.append('model', 'whisper-1');
+  formData.append('language', 'es'); // Spanish
+
+  console.log("Sending to Whisper API for transcription...");
+
+  const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openaiApiKey}`,
+    },
+    body: formData,
+  });
+
+  if (!whisperResponse.ok) {
+    const errorText = await whisperResponse.text();
+    console.error("Whisper API error:", whisperResponse.status, errorText);
+    throw new Error(`Whisper transcription failed: ${whisperResponse.status}`);
+  }
+
+  const result = await whisperResponse.json();
+  console.log("Transcription complete, length:", result.text?.length, "chars");
+  
+  return result.text;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -48,8 +128,23 @@ serve(async (req) => {
     } else if (submission.tipo === 'link') {
       contentToAnalyze = `Analyze meeting from link: ${submission.link}`;
     } else if (submission.tipo === 'file' && submission.archivo_url) {
-      // For files, we'll analyze metadata since we can't process audio directly
-      contentToAnalyze = `Audio file uploaded: ${submission.archivo_url}. Please provide general feedback structure for a meeting recording.`;
+      // Transcribe audio/video file using Whisper
+      console.log("File submission detected, starting transcription...");
+      try {
+        const transcription = await transcribeAudio(submission.archivo_url, supabase);
+        contentToAnalyze = transcription;
+        
+        // Save transcription to submission for reference
+        await supabase
+          .from('submissions')
+          .update({ transcript_text: transcription })
+          .eq('id', submissionId);
+        
+        console.log("Transcription saved to submission");
+      } catch (transcribeError) {
+        console.error("Transcription error:", transcribeError);
+        throw new Error(`Error transcribing audio: ${transcribeError instanceof Error ? transcribeError.message : 'Unknown error'}`);
+      }
     }
 
     if (!contentToAnalyze) {
