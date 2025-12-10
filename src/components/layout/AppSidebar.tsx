@@ -33,10 +33,13 @@ const userNavItems: NavItem[] = [
   { title: 'Configuración', icon: Settings, path: '/settings' },
 ];
 
+import { Sliders } from 'lucide-react';
+
 const adminNavItems: NavItem[] = [
   { title: 'Dashboard Admin', icon: BarChart3, path: '/admin', adminOnly: true },
   { title: 'Usuarios', icon: Users, path: '/admin/users', adminOnly: true },
   { title: 'Feedback Global', icon: MessageSquare, path: '/admin/feedback', adminOnly: true },
+  { title: 'Entrenar Feedback', icon: Sliders, path: '/admin/config', adminOnly: true },
 ];
 
 export const AppSidebar = () => {
