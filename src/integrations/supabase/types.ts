@@ -64,6 +64,57 @@ export type Database = {
           },
         ]
       }
+      feedback_config: {
+        Row: {
+          created_at: string
+          criterios: Json
+          escala_descripcion: Json
+          escala_max: number
+          escala_min: number
+          id: string
+          prompt_fortalezas: string | null
+          prompt_mejoras: string | null
+          prompt_recomendaciones: string | null
+          prompt_sistema: string | null
+          tono: string
+          tono_descripcion: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          criterios?: Json
+          escala_descripcion?: Json
+          escala_max?: number
+          escala_min?: number
+          id?: string
+          prompt_fortalezas?: string | null
+          prompt_mejoras?: string | null
+          prompt_recomendaciones?: string | null
+          prompt_sistema?: string | null
+          tono?: string
+          tono_descripcion?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          criterios?: Json
+          escala_descripcion?: Json
+          escala_max?: number
+          escala_min?: number
+          id?: string
+          prompt_fortalezas?: string | null
+          prompt_mejoras?: string | null
+          prompt_recomendaciones?: string | null
+          prompt_sistema?: string | null
+          tono?: string
+          tono_descripcion?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           activo: boolean

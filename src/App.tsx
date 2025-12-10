@@ -25,6 +25,7 @@ import SettingsPage from "@/pages/user/SettingsPage";
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
 import UsersPage from "@/pages/admin/UsersPage";
 import GlobalFeedbackPage from "@/pages/admin/GlobalFeedbackPage";
+import FeedbackConfigPage from "@/pages/admin/FeedbackConfigPage";
 
 import NotFound from "@/pages/NotFound";
 
@@ -58,6 +59,7 @@ const App = () => (
                 <Route path="/admin" element={<AdminDashboardPage />} />
                 <Route path="/admin/users" element={<UsersPage />} />
                 <Route path="/admin/feedback" element={<GlobalFeedbackPage />} />
+                <Route path="/admin/config" element={<FeedbackConfigPage />} />
               </Route>
             </Route>
 
