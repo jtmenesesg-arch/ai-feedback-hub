@@ -186,11 +186,16 @@ export const api = {
           return { success: false, error: uploadError.message };
         }
 
-        const { data: urlData } = supabase.storage
+        // Use signed URL since bucket is private
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
           .from('recordings')
-          .getPublicUrl(fileName);
+          .createSignedUrl(fileName, 60 * 60 * 24); // 24 hours expiry
         
-        archivo_url = urlData.publicUrl;
+        if (signedUrlError || !signedUrlData?.signedUrl) {
+          return { success: false, error: 'Error generating file URL' };
+        }
+        
+        archivo_url = signedUrlData.signedUrl;
       }
 
       // Create submission
