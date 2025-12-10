@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { jsPDF } from 'jspdf';
 import {
   ArrowLeft,
   Download,
@@ -24,6 +25,7 @@ export const FeedbackPage = () => {
   const { toast } = useToast();
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   useEffect(() => {
     const fetchEvaluation = async () => {
@@ -37,27 +39,187 @@ export const FeedbackPage = () => {
   }, [id]);
 
   const handleDownloadPdf = async () => {
-    if (!id) return;
+    if (!evaluation) return;
     
+    setIsGeneratingPdf(true);
     toast({
       title: 'Generando PDF...',
       description: 'Por favor espera un momento',
     });
 
-    const blob = await api.downloadPdf(id);
-    
-    if (blob) {
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `evaluacion-${id}.pdf`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-    } else {
-      toast({
-        title: 'Info',
-        description: 'La descarga de PDF requiere configurar el backend',
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 20;
+      const contentWidth = pageWidth - margin * 2;
+      let yPosition = 20;
+
+      // Helper function to add text with word wrap
+      const addWrappedText = (text: string, y: number, fontSize: number = 11, isBold: boolean = false) => {
+        doc.setFontSize(fontSize);
+        doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+        const lines = doc.splitTextToSize(text, contentWidth);
+        doc.text(lines, margin, y);
+        return y + (lines.length * fontSize * 0.4) + 4;
+      };
+
+      // Check if we need a new page
+      const checkNewPage = (requiredSpace: number) => {
+        if (yPosition + requiredSpace > doc.internal.pageSize.getHeight() - 20) {
+          doc.addPage();
+          yPosition = 20;
+        }
+      };
+
+      // Header
+      doc.setFillColor(26, 115, 232); // Primary blue
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Evaluador AI', margin, 25);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Reporte de Evaluación', margin, 33);
+
+      yPosition = 55;
+      doc.setTextColor(0, 0, 0);
+
+      // Title
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text(evaluation.titulo || 'Evaluación', margin, yPosition);
+      yPosition += 10;
+
+      // Date
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      const dateStr = new Date(evaluation.fecha || evaluation.created_at).toLocaleDateString('es-ES', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
       });
+      doc.text(`Fecha: ${dateStr}`, margin, yPosition);
+      yPosition += 15;
+      doc.setTextColor(0, 0, 0);
+
+      // Score
+      checkNewPage(30);
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(margin, yPosition - 5, contentWidth, 25, 3, 3, 'F');
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Nota General:', margin + 5, yPosition + 8);
+      doc.setFontSize(20);
+      const scoreColor = evaluation.score >= 80 ? [0, 200, 83] : evaluation.score >= 60 ? [245, 158, 11] : [239, 68, 68];
+      doc.setTextColor(scoreColor[0], scoreColor[1], scoreColor[2]);
+      doc.text(`${evaluation.score}/100`, margin + 60, yPosition + 9);
+      doc.setTextColor(0, 0, 0);
+      yPosition += 30;
+
+      // Participants
+      if (evaluation.participantes && evaluation.participantes.length > 0) {
+        checkNewPage(30);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Participantes', margin, yPosition);
+        yPosition += 8;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        doc.text(evaluation.participantes.join(', '), margin, yPosition);
+        yPosition += 15;
+      }
+
+      // Summary
+      if (evaluation.resumen) {
+        checkNewPage(40);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Resumen', margin, yPosition);
+        yPosition += 8;
+        yPosition = addWrappedText(evaluation.resumen, yPosition);
+        yPosition += 5;
+      }
+
+      // Strengths
+      if (evaluation.fortalezas && evaluation.fortalezas.length > 0) {
+        checkNewPage(40);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 200, 83);
+        doc.text('Fortalezas', margin, yPosition);
+        doc.setTextColor(0, 0, 0);
+        yPosition += 8;
+        evaluation.fortalezas.forEach((item, index) => {
+          checkNewPage(15);
+          yPosition = addWrappedText(`${index + 1}. ${item}`, yPosition);
+        });
+        yPosition += 5;
+      }
+
+      // Improvements
+      if (evaluation.mejoras && evaluation.mejoras.length > 0) {
+        checkNewPage(40);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(245, 158, 11);
+        doc.text('Áreas de Mejora', margin, yPosition);
+        doc.setTextColor(0, 0, 0);
+        yPosition += 8;
+        evaluation.mejoras.forEach((item, index) => {
+          checkNewPage(15);
+          yPosition = addWrappedText(`${index + 1}. ${item}`, yPosition);
+        });
+        yPosition += 5;
+      }
+
+      // Recommendations
+      if (evaluation.recomendaciones && evaluation.recomendaciones.length > 0) {
+        checkNewPage(40);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(26, 115, 232);
+        doc.text('Recomendaciones', margin, yPosition);
+        doc.setTextColor(0, 0, 0);
+        yPosition += 8;
+        evaluation.recomendaciones.forEach((item, index) => {
+          checkNewPage(15);
+          yPosition = addWrappedText(`${index + 1}. ${item}`, yPosition);
+        });
+      }
+
+      // Footer
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text(
+          `Generado por Evaluador AI - Página ${i} de ${pageCount}`,
+          pageWidth / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+
+      // Save
+      const fileName = `evaluacion-${evaluation.titulo?.replace(/\s+/g, '-').toLowerCase() || id}.pdf`;
+      doc.save(fileName);
+
+      toast({
+        title: 'PDF generado',
+        description: 'El archivo se ha descargado correctamente',
+      });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No se pudo generar el PDF',
+      });
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
@@ -125,9 +287,13 @@ export const FeedbackPage = () => {
             </span>
           </div>
         </div>
-        <Button variant="outline" onClick={handleDownloadPdf}>
-          <Download className="h-4 w-4 mr-2" />
-          Descargar PDF
+        <Button variant="outline" onClick={handleDownloadPdf} disabled={isGeneratingPdf}>
+          {isGeneratingPdf ? (
+            <LoadingSpinner size="sm" className="mr-2" />
+          ) : (
+            <Download className="h-4 w-4 mr-2" />
+          )}
+          {isGeneratingPdf ? 'Generando...' : 'Descargar PDF'}
         </Button>
       </div>
 
