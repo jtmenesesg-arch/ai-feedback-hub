@@ -8,34 +8,31 @@ const corsHeaders = {
 };
 
 // Transcribe audio file using OpenAI Whisper
-async function transcribeAudio(audioUrl: string, supabase: any): Promise<string> {
+async function transcribeAudio(filePath: string, supabase: any): Promise<string> {
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
   
   if (!openaiApiKey) {
     throw new Error("OPENAI_API_KEY not configured");
   }
 
-  console.log("Downloading audio file from storage...");
+  console.log("Downloading audio file from storage:", filePath);
   
-  // Extract bucket and path from the URL
-  // URL format: https://[project].supabase.co/storage/v1/object/public/[bucket]/[path]
-  // or signed URL format
-  const urlParts = audioUrl.split('/storage/v1/object/');
-  if (urlParts.length < 2) {
-    throw new Error("Invalid storage URL format");
+  // Parse the file path - format: "recordings/user_id/timestamp.ext"
+  const parts = filePath.split('/');
+  if (parts.length < 2) {
+    throw new Error("Invalid file path format");
   }
   
-  const pathPart = urlParts[1].replace('public/', '').replace('sign/', '');
-  const [bucket, ...fileParts] = pathPart.split('/');
-  const filePath = fileParts.join('/');
+  const bucket = parts[0]; // "recordings"
+  const objectPath = parts.slice(1).join('/'); // "user_id/timestamp.ext"
   
-  console.log(`Downloading from bucket: ${bucket}, path: ${filePath}`);
+  console.log(`Downloading from bucket: ${bucket}, path: ${objectPath}`);
   
-  // Download the file from storage
+  // Download the file from storage using service role
   const { data: fileData, error: downloadError } = await supabase
     .storage
     .from(bucket)
-    .download(filePath);
+    .download(objectPath);
   
   if (downloadError || !fileData) {
     console.error("Error downloading file:", downloadError);
@@ -48,7 +45,7 @@ async function transcribeAudio(audioUrl: string, supabase: any): Promise<string>
   const formData = new FormData();
   
   // Determine file extension from path
-  const extension = filePath.split('.').pop()?.toLowerCase() || 'mp3';
+  const extension = objectPath.split('.').pop()?.toLowerCase() || 'mp3';
   const mimeTypes: Record<string, string> = {
     'mp3': 'audio/mpeg',
     'mp4': 'video/mp4',

@@ -178,27 +178,24 @@ export const api = {
         const fileExt = payload.file.name.split('.').pop();
         const fileName = `${payload.user_id}/${Date.now()}.${fileExt}`;
         
+        console.log('Uploading file:', fileName);
+        
         const { error: uploadError } = await supabase.storage
           .from('recordings')
           .upload(fileName, payload.file);
 
         if (uploadError) {
+          console.error('Upload error:', uploadError);
           return { success: false, error: uploadError.message };
         }
 
-        // Use signed URL since bucket is private
-        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-          .from('recordings')
-          .createSignedUrl(fileName, 60 * 60 * 24); // 24 hours expiry
-        
-        if (signedUrlError || !signedUrlData?.signedUrl) {
-          return { success: false, error: 'Error generating file URL' };
-        }
-        
-        archivo_url = signedUrlData.signedUrl;
+        // Store the file path (not URL) - edge function will download with service role
+        archivo_url = `recordings/${fileName}`;
+        console.log('File uploaded successfully:', archivo_url);
       }
 
       // Create submission
+      console.log('Creating submission...');
       const { data, error } = await supabase
         .from('submissions')
         .insert({
@@ -212,8 +209,11 @@ export const api = {
         .single();
 
       if (error) {
+        console.error('Submission error:', error);
         return { success: false, error: error.message };
       }
+
+      console.log('Submission created:', data.id);
 
       // Trigger AI processing in background
       supabase.functions.invoke('process-meeting', {
@@ -224,6 +224,7 @@ export const api = {
 
       return { success: true, id: data.id };
     } catch (error) {
+      console.error('Submit error:', error);
       return { success: false, error: 'Error al enviar' };
     }
   },
