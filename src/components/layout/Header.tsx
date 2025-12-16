@@ -9,12 +9,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { LogOut, User, Settings, Bell, Brain } from 'lucide-react';
+import { LogOut, User, Settings, Bell, Brain, Menu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { MobileSidebar } from './MobileSidebar';
+import { useState } from 'react';
 
 export const Header = () => {
   const { profile, logout } = useAuth();
   const navigate = useNavigate();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -31,13 +34,24 @@ export const Header = () => {
   };
 
   return (
-    <header className="h-16 bg-card border-b border-border px-6 flex items-center justify-between sticky top-0 z-50">
-      {/* Left - Mobile logo */}
-      <div className="flex items-center gap-3 lg:hidden">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-          <Brain className="h-5 w-5 text-primary-foreground" />
+    <header className="h-16 bg-card border-b border-border px-4 sm:px-6 flex items-center justify-between sticky top-0 z-50">
+      {/* Left - Mobile menu button and logo */}
+      <div className="flex items-center gap-2 lg:hidden">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={() => setMobileMenuOpen(true)}
+          className="shrink-0"
+        >
+          <Menu className="h-5 w-5" />
+          <span className="sr-only">Abrir menú</span>
+        </Button>
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+            <Brain className="h-5 w-5 text-primary-foreground" />
+          </div>
+          <span className="font-bold text-foreground">Evaluador AI</span>
         </div>
-        <span className="font-bold text-foreground">Evaluador AI</span>
       </div>
 
       {/* Left - Welcome message on desktop */}
@@ -51,7 +65,7 @@ export const Header = () => {
       </div>
 
       {/* Right - Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5 text-muted-foreground" />
@@ -73,7 +87,7 @@ export const Header = () => {
               </div>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className="w-56 bg-popover">
             <DropdownMenuLabel>Mi cuenta</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate('/settings')}>
@@ -92,6 +106,9 @@ export const Header = () => {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Mobile Sidebar Sheet */}
+      <MobileSidebar open={mobileMenuOpen} onOpenChange={setMobileMenuOpen} />
     </header>
   );
 };
