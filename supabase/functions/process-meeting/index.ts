@@ -88,11 +88,18 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // IMPORTANT: keep submissionId outside try so we can update status on failures
+  let submissionId: string | undefined;
+
   try {
-    const { submissionId } = await req.json();
-    
+    const body = await req.json().catch(() => ({}));
+    submissionId = body?.submissionId;
+
     if (!submissionId) {
-      throw new Error("submissionId is required");
+      return new Response(
+        JSON.stringify({ error: "submissionId is required" }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     console.log("Processing submission:", submissionId);
@@ -130,17 +137,19 @@ serve(async (req) => {
       try {
         const transcription = await transcribeAudio(submission.archivo_url, supabase);
         contentToAnalyze = transcription;
-        
+
         // Save transcription to submission for reference
         await supabase
           .from('submissions')
           .update({ transcript_text: transcription })
           .eq('id', submissionId);
-        
+
         console.log("Transcription saved to submission");
       } catch (transcribeError) {
         console.error("Transcription error:", transcribeError);
-        throw new Error(`Error transcribing audio: ${transcribeError instanceof Error ? transcribeError.message : 'Unknown error'}`);
+        throw new Error(
+          `Error transcribing audio: ${transcribeError instanceof Error ? transcribeError.message : 'Unknown error'}`
+        );
       }
     }
 
@@ -191,7 +200,7 @@ Responde SOLO con el JSON, sin texto adicional.`
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error("AI API error:", aiResponse.status, errorText);
-      
+
       if (aiResponse.status === 429) {
         throw new Error("Rate limit exceeded. Please try again later.");
       }
@@ -205,7 +214,7 @@ Responde SOLO con el JSON, sin texto adicional.`
     console.log("AI response received");
 
     const aiContent = aiData.choices?.[0]?.message?.content;
-    
+
     if (!aiContent) {
       throw new Error("No content in AI response");
     }
@@ -258,20 +267,19 @@ Responde SOLO con el JSON, sin texto adicional.`
     }
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
         evaluationId: evaluation.id,
-        feedback 
+        feedback
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
     console.error("Error processing meeting:", error);
-    
-    // Try to update submission status to error
+
+    // Always try to update submission status to error (avoid re-reading req.json())
     try {
-      const { submissionId } = await req.json().catch(() => ({}));
       if (submissionId) {
         const supabase = createClient(
           Deno.env.get('SUPABASE_URL')!,
@@ -282,15 +290,17 @@ Responde SOLO con el JSON, sin texto adicional.`
           .update({ estado: 'error' })
           .eq('id', submissionId);
       }
-    } catch {}
+    } catch (statusErr) {
+      console.error("Failed to mark submission as error:", statusErr);
+    }
 
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : "Unknown error" 
+      JSON.stringify({
+        error: error instanceof Error ? error.message : "Unknown error"
       }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
   }

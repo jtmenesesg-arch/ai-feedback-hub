@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/services/api';
@@ -22,18 +22,32 @@ export const EvaluationsPage = () => {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchEvaluations = async () => {
+  const fetchEvaluations = useCallback(async () => {
     if (user?.id) {
       setIsLoading(true);
       const data = await api.getUserEvaluations(user.id);
       setEvaluations(data);
       setIsLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     fetchEvaluations();
-  }, [user?.id]);
+  }, [fetchEvaluations]);
+
+  // Auto-refresh while there are evaluations in processing state
+  const hasProcessing = evaluations.some(
+    (e) => (e.submission?.estado || 'procesando') === 'procesando'
+  );
+
+  useEffect(() => {
+    if (!hasProcessing) return;
+    const intervalId = window.setInterval(() => {
+      fetchEvaluations();
+    }, 10_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [hasProcessing, fetchEvaluations]);
 
   const getTypeIcon = (tipo: string) => {
     switch (tipo) {
