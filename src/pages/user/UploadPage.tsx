@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { compressAudioIfNeeded } from '@/utils/audioCompressor';
 import {
   Upload,
   FileAudio,
@@ -25,7 +26,7 @@ const ACCEPTED_TYPES = {
   audio: ['.mp3', '.wav', '.m4a'],
   video: ['.mp4'],
 };
-const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB (Whisper API limit)
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB - we'll compress large files
 
 export const UploadPage = () => {
   const { user } = useAuth();
@@ -40,6 +41,7 @@ export const UploadPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [compressionStatus, setCompressionStatus] = useState<string | null>(null);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -59,7 +61,7 @@ export const UploadPage = () => {
       return 'Tipo de archivo no permitido. Usa MP3, MP4, WAV o M4A.';
     }
     if (file.size > MAX_FILE_SIZE) {
-      return 'El archivo excede el límite de 25MB.';
+      return 'El archivo excede el límite de 500MB.';
     }
     return null;
   };
@@ -98,11 +100,40 @@ export const UploadPage = () => {
     let payload: { user_id: string; type: 'file' | 'transcript' | 'link'; file?: File; transcript?: string; link?: string };
 
     if (activeTab === 'file' && file) {
-      payload = { user_id: user.id, type: 'file', file };
+      setIsSubmitting(true);
+      setCompressionStatus(null);
+      
+      try {
+        // Compress audio if needed (files > 24MB)
+        const compressionResult = await compressAudioIfNeeded(file, (status) => {
+          setCompressionStatus(status);
+        });
+        
+        if (compressionResult.wasCompressed) {
+          toast({
+            title: 'Audio comprimido',
+            description: `${(compressionResult.originalSize / 1024 / 1024).toFixed(1)}MB → ${(compressionResult.compressedSize / 1024 / 1024).toFixed(1)}MB`,
+          });
+        }
+        
+        setCompressionStatus(null);
+        payload = { user_id: user.id, type: 'file', file: compressionResult.file };
+      } catch (error) {
+        setIsSubmitting(false);
+        setCompressionStatus(null);
+        toast({
+          title: 'Error de compresión',
+          description: error instanceof Error ? error.message : 'No se pudo comprimir el archivo',
+          variant: 'destructive',
+        });
+        return;
+      }
     } else if (activeTab === 'transcript' && transcript.trim()) {
       payload = { user_id: user.id, type: 'transcript', transcript: transcript.trim() };
+      setIsSubmitting(true);
     } else if (activeTab === 'link' && externalLink.trim()) {
       payload = { user_id: user.id, type: 'link', link: externalLink.trim() };
+      setIsSubmitting(true);
     } else {
       toast({
         title: 'Error',
@@ -112,7 +143,6 @@ export const UploadPage = () => {
       return;
     }
 
-    setIsSubmitting(true);
     const result = await api.submitMeeting(payload);
     setIsSubmitting(false);
 
@@ -239,7 +269,7 @@ export const UploadPage = () => {
                     Arrastra tu archivo aquí o haz clic para seleccionar
                   </p>
                   <p className="text-sm text-muted-foreground mt-2">
-                    Formatos: MP3, MP4, WAV, M4A • Máximo 25MB
+                    Formatos: MP3, MP4, WAV, M4A • Archivos grandes se comprimen automáticamente
                   </p>
                 </>
               )}
@@ -301,7 +331,7 @@ export const UploadPage = () => {
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Enviando...
+                {compressionStatus || 'Enviando...'}
               </>
             ) : (
               <>
