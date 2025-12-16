@@ -1,7 +1,7 @@
-import lamejs from 'lamejs';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 const MAX_SIZE_MB = 24; // Compress if larger than 24MB
-const TARGET_BITRATE = 64; // Target bitrate in kbps for compressed audio
 
 export interface CompressionResult {
   file: File;
@@ -10,100 +10,33 @@ export interface CompressionResult {
   compressedSize: number;
 }
 
+let ffmpeg: FFmpeg | null = null;
+
 /**
- * Decode audio file to AudioBuffer using Web Audio API
+ * Load FFmpeg WASM (lazy loading, only when needed)
  */
-async function decodeAudioFile(file: File): Promise<AudioBuffer> {
-  const arrayBuffer = await file.arrayBuffer();
-  const audioContext = new AudioContext();
-  
-  try {
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    return audioBuffer;
-  } finally {
-    await audioContext.close();
+async function loadFFmpeg(onProgress?: (status: string) => void): Promise<FFmpeg> {
+  if (ffmpeg && ffmpeg.loaded) {
+    return ffmpeg;
   }
+  
+  onProgress?.('Cargando compresor de audio...');
+  
+  ffmpeg = new FFmpeg();
+  
+  // Load FFmpeg from CDN
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+  
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+  });
+  
+  return ffmpeg;
 }
 
 /**
- * Convert AudioBuffer to MP3 using lamejs
- */
-function encodeToMp3(audioBuffer: AudioBuffer, bitrate: number = TARGET_BITRATE): Blob {
-  const numChannels = audioBuffer.numberOfChannels;
-  const sampleRate = audioBuffer.sampleRate;
-  const samples = audioBuffer.length;
-  
-  // Get audio data - convert to mono if stereo for smaller size
-  let leftChannel: Float32Array;
-  let rightChannel: Float32Array | null = null;
-  
-  if (numChannels === 1) {
-    leftChannel = audioBuffer.getChannelData(0);
-  } else {
-    leftChannel = audioBuffer.getChannelData(0);
-    rightChannel = audioBuffer.getChannelData(1);
-  }
-  
-  // Convert float samples to int16
-  const leftInt16 = floatTo16BitPCM(leftChannel);
-  const rightInt16 = rightChannel ? floatTo16BitPCM(rightChannel) : null;
-  
-  // Initialize MP3 encoder
-  const mp3encoder = new lamejs.Mp3Encoder(rightInt16 ? 2 : 1, sampleRate, bitrate);
-  
-  const mp3Data: ArrayBuffer[] = [];
-  const blockSize = 1152; // Must be multiple of 576 for lamejs
-  
-  for (let i = 0; i < samples; i += blockSize) {
-    const leftChunk = leftInt16.subarray(i, i + blockSize);
-    
-    let mp3buf: Int8Array;
-    if (rightInt16) {
-      const rightChunk = rightInt16.subarray(i, i + blockSize);
-      mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
-    } else {
-      mp3buf = mp3encoder.encodeBuffer(leftChunk);
-    }
-    
-    if (mp3buf.length > 0) {
-      // Convert to ArrayBuffer for Blob compatibility
-      const buffer = new ArrayBuffer(mp3buf.length);
-      const view = new Uint8Array(buffer);
-      for (let j = 0; j < mp3buf.length; j++) {
-        view[j] = mp3buf[j] & 0xff;
-      }
-      mp3Data.push(buffer);
-    }
-  }
-  
-  // Flush remaining data
-  const mp3buf = mp3encoder.flush();
-  if (mp3buf.length > 0) {
-    const buffer = new ArrayBuffer(mp3buf.length);
-    const view = new Uint8Array(buffer);
-    for (let j = 0; j < mp3buf.length; j++) {
-      view[j] = mp3buf[j] & 0xff;
-    }
-    mp3Data.push(buffer);
-  }
-  
-  return new Blob(mp3Data, { type: 'audio/mpeg' });
-}
-
-/**
- * Convert Float32Array to Int16Array for MP3 encoding
- */
-function floatTo16BitPCM(float32Array: Float32Array): Int16Array {
-  const int16Array = new Int16Array(float32Array.length);
-  for (let i = 0; i < float32Array.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32Array[i]));
-    int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-  }
-  return int16Array;
-}
-
-/**
- * Compress audio file if it exceeds the size limit
+ * Compress audio file if it exceeds the size limit using FFmpeg
  */
 export async function compressAudioIfNeeded(
   file: File,
@@ -122,29 +55,64 @@ export async function compressAudioIfNeeded(
     };
   }
   
-  onProgress?.('Decodificando audio...');
-  
   try {
-    // Decode the audio file
-    const audioBuffer = await decodeAudioFile(file);
+    const ff = await loadFFmpeg(onProgress);
+    
+    onProgress?.('Procesando audio...');
+    
+    // Get file extension
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'mp3';
+    const inputName = `input.${extension}`;
+    const outputName = 'output.mp3';
+    
+    // Calculate target bitrate based on desired output size (~20MB for safety)
+    // Estimate: bitrate = (target_size_bytes * 8) / duration_seconds / 1000
+    // Since we don't know duration yet, use a conservative estimate
+    // For a 100MB file that's ~40 minutes, targeting 20MB = ~64kbps
+    const targetBitrate = Math.max(32, Math.min(96, Math.floor((20 * 8) / (sizeMB / 2))));
+    
+    console.log(`Compressing audio: ${sizeMB.toFixed(1)}MB -> target bitrate: ${targetBitrate}kbps`);
+    
+    // Write input file to FFmpeg virtual filesystem
+    await ff.writeFile(inputName, await fetchFile(file));
     
     onProgress?.('Comprimiendo audio...');
     
-    // Calculate target bitrate based on desired output size
-    // Target ~20MB output for safety margin
-    const durationSecs = audioBuffer.duration;
-    const targetSizeBytes = 20 * 1024 * 1024; // 20MB
-    let targetBitrate = Math.floor((targetSizeBytes * 8) / durationSecs / 1000);
+    // Run FFmpeg compression
+    // -i: input file
+    // -b:a: audio bitrate
+    // -ac 1: convert to mono
+    // -ar 16000: sample rate 16kHz (good enough for speech)
+    await ff.exec([
+      '-i', inputName,
+      '-b:a', `${targetBitrate}k`,
+      '-ac', '1',
+      '-ar', '16000',
+      '-y', // overwrite output
+      outputName
+    ]);
     
-    // Clamp bitrate between 32 and 128 kbps
-    targetBitrate = Math.max(32, Math.min(128, targetBitrate));
+    // Read compressed output
+    const compressedData = await ff.readFile(outputName);
     
-    console.log(`Compressing: duration=${durationSecs.toFixed(1)}s, targetBitrate=${targetBitrate}kbps`);
+    // Clean up virtual filesystem
+    await ff.deleteFile(inputName);
+    await ff.deleteFile(outputName);
     
-    // Encode to MP3
-    const compressedBlob = encodeToMp3(audioBuffer, targetBitrate);
+    // Convert to ArrayBuffer for Blob compatibility
+    let arrayBuffer: ArrayBuffer;
+    if (compressedData instanceof Uint8Array) {
+      // Create a new ArrayBuffer and copy data to ensure compatibility
+      arrayBuffer = new ArrayBuffer(compressedData.byteLength);
+      new Uint8Array(arrayBuffer).set(compressedData);
+    } else {
+      // It's a string, convert to ArrayBuffer
+      const encoder = new TextEncoder();
+      arrayBuffer = encoder.encode(compressedData as string).buffer as ArrayBuffer;
+    }
     
-    // Create new file with compressed data
+    // Create new file
+    const compressedBlob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
     const compressedFile = new File(
       [compressedBlob],
       file.name.replace(/\.[^.]+$/, '_compressed.mp3'),
@@ -153,7 +121,7 @@ export async function compressAudioIfNeeded(
     
     onProgress?.('Compresión completada');
     
-    console.log(`Compression complete: ${(originalSize/1024/1024).toFixed(1)}MB -> ${(compressedFile.size/1024/1024).toFixed(1)}MB`);
+    console.log(`Compression complete: ${sizeMB.toFixed(1)}MB -> ${(compressedFile.size / 1024 / 1024).toFixed(1)}MB`);
     
     return {
       file: compressedFile,
@@ -163,6 +131,6 @@ export async function compressAudioIfNeeded(
     };
   } catch (error) {
     console.error('Audio compression failed:', error);
-    throw new Error('No se pudo comprimir el audio. Intenta con un archivo más pequeño.');
+    throw new Error('No se pudo comprimir el audio. Intenta con un archivo más pequeño o usa la opción de transcripción.');
   }
 }
