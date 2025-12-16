@@ -7,6 +7,77 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Rate limit: max submissions per user per hour
+const RATE_LIMIT_PER_HOUR = 10;
+const MAX_CONTENT_LENGTH = 100000; // 100k chars max for AI analysis
+
+// Allowed MIME types and their magic bytes for validation
+const ALLOWED_AUDIO_SIGNATURES: Record<string, { mimeTypes: string[], magicBytes: number[][] }> = {
+  'mp3': { 
+    mimeTypes: ['audio/mpeg'], 
+    magicBytes: [[0xFF, 0xFB], [0xFF, 0xF3], [0xFF, 0xF2], [0x49, 0x44, 0x33]] // ID3 tag or MPEG frame
+  },
+  'mp4': { 
+    mimeTypes: ['video/mp4', 'audio/mp4'], 
+    magicBytes: [[0x66, 0x74, 0x79, 0x70]] // 'ftyp' at offset 4
+  },
+  'm4a': { 
+    mimeTypes: ['audio/mp4', 'audio/x-m4a'], 
+    magicBytes: [[0x66, 0x74, 0x79, 0x70]] // 'ftyp' at offset 4
+  },
+  'wav': { 
+    mimeTypes: ['audio/wav', 'audio/wave', 'audio/x-wav'], 
+    magicBytes: [[0x52, 0x49, 0x46, 0x46]] // 'RIFF'
+  },
+};
+
+// Validate file using magic bytes
+function validateFileMagicBytes(buffer: ArrayBuffer, extension: string): boolean {
+  const signature = ALLOWED_AUDIO_SIGNATURES[extension.toLowerCase()];
+  if (!signature) {
+    console.log(`Unknown extension: ${extension}`);
+    return false;
+  }
+  
+  const bytes = new Uint8Array(buffer.slice(0, 12));
+  
+  // MP4/M4A check offset 4 for 'ftyp'
+  if (extension === 'mp4' || extension === 'm4a') {
+    const ftypBytes = bytes.slice(4, 8);
+    const ftypMatch = signature.magicBytes[0].every((b, i) => ftypBytes[i] === b);
+    if (ftypMatch) return true;
+  }
+  
+  // Check magic bytes at start
+  for (const magic of signature.magicBytes) {
+    const match = magic.every((b, i) => bytes[i] === b);
+    if (match) return true;
+  }
+  
+  console.log(`Magic byte validation failed for ${extension}. First bytes: ${Array.from(bytes.slice(0, 8)).map(b => b.toString(16)).join(' ')}`);
+  return false;
+}
+
+// Rate limiting check
+async function checkRateLimit(supabase: any, userId: string): Promise<{ allowed: boolean; count: number }> {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  
+  const { count, error } = await supabase
+    .from('submissions')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .gte('created_at', oneHourAgo);
+  
+  if (error) {
+    console.error('Error checking rate limit:', error);
+    // Fail open but log the issue
+    return { allowed: true, count: 0 };
+  }
+  
+  const currentCount = count || 0;
+  return { allowed: currentCount < RATE_LIMIT_PER_HOUR, count: currentCount };
+}
+
 // Transcribe audio file using OpenAI Whisper
 async function transcribeAudio(filePath: string, supabase: any): Promise<string> {
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
@@ -48,11 +119,20 @@ async function transcribeAudio(filePath: string, supabase: any): Promise<string>
     throw new Error(`Audio file too large for transcription (${fileSizeMB.toFixed(1)}MB). Maximum is 25MB.`);
   }
 
+  // Validate file type using magic bytes
+  const extension = objectPath.split('.').pop()?.toLowerCase() || 'mp3';
+  const arrayBuffer = await fileData.arrayBuffer();
+  
+  if (!validateFileMagicBytes(arrayBuffer, extension)) {
+    console.error(`File validation failed: ${extension} file has invalid magic bytes`);
+    throw new Error(`Invalid file format. The file content does not match the expected ${extension.toUpperCase()} format.`);
+  }
+  
+  console.log(`File magic byte validation passed for ${extension}`);
+
   // Create FormData for Whisper API
   const formData = new FormData();
   
-  // Determine file extension from path
-  const extension = objectPath.split('.').pop()?.toLowerCase() || 'mp3';
   const mimeTypes: Record<string, string> = {
     'mp3': 'audio/mpeg',
     'mp4': 'video/mp4',
@@ -63,7 +143,7 @@ async function transcribeAudio(filePath: string, supabase: any): Promise<string>
   };
   
   const mimeType = mimeTypes[extension] || 'audio/mpeg';
-  const blob = new Blob([fileData], { type: mimeType });
+  const blob = new Blob([arrayBuffer], { type: mimeType });
   formData.append('file', blob, `audio.${extension}`);
   formData.append('model', 'whisper-1');
   formData.append('language', 'es'); // Spanish
@@ -139,7 +219,47 @@ serve(async (req) => {
       throw new Error("Submission not found");
     }
 
-    console.log("Submission found:", submission.tipo);
+    console.log("Submission found:", submission.tipo, "estado:", submission.estado);
+
+    // Check if already processed (idempotency)
+    if (submission.estado === 'completado') {
+      const { data: existingEval } = await supabase
+        .from('evaluations')
+        .select('id')
+        .eq('submission_id', submissionId)
+        .maybeSingle();
+      
+      if (existingEval) {
+        console.log("Submission already processed, returning existing evaluation");
+        return new Response(
+          JSON.stringify({
+            success: true,
+            evaluationId: existingEval.id,
+            message: 'Already processed'
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // Rate limiting check
+    const rateLimit = await checkRateLimit(supabase, submission.user_id);
+    if (!rateLimit.allowed) {
+      console.log(`Rate limit exceeded for user ${submission.user_id}: ${rateLimit.count} submissions in last hour`);
+      
+      // Mark as error with rate limit message
+      await supabase
+        .from('submissions')
+        .update({ estado: 'error' })
+        .eq('id', submissionId);
+      
+      return new Response(
+        JSON.stringify({ 
+          error: `Rate limit exceeded. Maximum ${RATE_LIMIT_PER_HOUR} submissions per hour. Try again later.` 
+        }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Get content to analyze
     let contentToAnalyze = "";
@@ -174,7 +294,13 @@ serve(async (req) => {
       throw new Error("No content to analyze");
     }
 
-    console.log("Calling Lovable AI for analysis...");
+    // Validate content length before expensive AI call
+    if (contentToAnalyze.length > MAX_CONTENT_LENGTH) {
+      console.log(`Content too long: ${contentToAnalyze.length} chars, truncating to ${MAX_CONTENT_LENGTH}`);
+      contentToAnalyze = contentToAnalyze.substring(0, MAX_CONTENT_LENGTH) + '\n\n[Content truncated due to length]';
+    }
+
+    console.log("Calling Lovable AI for analysis, content length:", contentToAnalyze.length);
 
     // Call Lovable AI for analysis
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {

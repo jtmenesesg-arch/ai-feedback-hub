@@ -26,7 +26,8 @@ const ACCEPTED_TYPES = {
   audio: ['.mp3', '.wav', '.m4a'],
   video: ['.mp4'],
 };
-const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB - we'll compress large files
+// 25MB limit aligned with OpenAI Whisper API (client compression handles larger files)
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB - Whisper API limit
 
 export const UploadPage = () => {
   const { user } = useAuth();
@@ -60,9 +61,8 @@ export const UploadPage = () => {
     if (!allAccepted.includes(extension)) {
       return 'Tipo de archivo no permitido. Usa MP3, MP4, WAV o M4A.';
     }
-    if (file.size > MAX_FILE_SIZE) {
-      return 'El archivo excede el límite de 500MB.';
-    }
+    // Files larger than 25MB will be compressed client-side before upload
+    // MAX_FILE_SIZE validation happens post-compression
     return null;
   };
 
