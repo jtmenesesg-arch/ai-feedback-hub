@@ -39,7 +39,14 @@ async function transcribeAudio(filePath: string, supabase: any): Promise<string>
     throw new Error(`Failed to download audio file: ${downloadError?.message}`);
   }
 
-  console.log("Audio file downloaded, size:", fileData.size, "bytes");
+  const fileSizeBytes = fileData.size;
+  const fileSizeMB = fileSizeBytes / (1024 * 1024);
+  console.log("Audio file downloaded, size:", fileSizeBytes, "bytes (", fileSizeMB.toFixed(2), "MB)");
+
+  // Whisper API has a 25MB limit
+  if (fileSizeMB > 25) {
+    throw new Error(`Audio file too large for transcription (${fileSizeMB.toFixed(1)}MB). Maximum is 25MB.`);
+  }
 
   // Create FormData for Whisper API
   const formData = new FormData();
@@ -61,7 +68,7 @@ async function transcribeAudio(filePath: string, supabase: any): Promise<string>
   formData.append('model', 'whisper-1');
   formData.append('language', 'es'); // Spanish
 
-  console.log("Sending to Whisper API for transcription...");
+  console.log("Sending to Whisper API for transcription, mime:", mimeType);
 
   const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
@@ -73,8 +80,18 @@ async function transcribeAudio(filePath: string, supabase: any): Promise<string>
 
   if (!whisperResponse.ok) {
     const errorText = await whisperResponse.text();
-    console.error("Whisper API error:", whisperResponse.status, errorText);
-    throw new Error(`Whisper transcription failed: ${whisperResponse.status}`);
+    console.error("Whisper API error:", whisperResponse.status, "response:", errorText);
+    
+    // Parse error if possible
+    let errorMsg = `Whisper transcription failed: ${whisperResponse.status}`;
+    try {
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.error?.message) {
+        errorMsg = `Whisper error: ${errorJson.error.message}`;
+      }
+    } catch {}
+    
+    throw new Error(errorMsg);
   }
 
   const result = await whisperResponse.json();

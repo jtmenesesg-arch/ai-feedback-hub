@@ -25,7 +25,7 @@ const ACCEPTED_TYPES = {
   audio: ['.mp3', '.wav', '.m4a'],
   video: ['.mp4'],
 };
-const MAX_FILE_SIZE = 250 * 1024 * 1024; // 250MB
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB (Whisper API limit)
 
 export const UploadPage = () => {
   const { user } = useAuth();
@@ -59,7 +59,7 @@ export const UploadPage = () => {
       return 'Tipo de archivo no permitido. Usa MP3, MP4, WAV o M4A.';
     }
     if (file.size > MAX_FILE_SIZE) {
-      return 'El archivo excede el límite de 250MB.';
+      return 'El archivo excede el límite de 25MB.';
     }
     return null;
   };
@@ -239,7 +239,7 @@ export const UploadPage = () => {
                     Arrastra tu archivo aquí o haz clic para seleccionar
                   </p>
                   <p className="text-sm text-muted-foreground mt-2">
-                    Formatos: MP3, MP4, WAV, M4A • Máximo 250MB
+                    Formatos: MP3, MP4, WAV, M4A • Máximo 25MB
                   </p>
                 </>
               )}
